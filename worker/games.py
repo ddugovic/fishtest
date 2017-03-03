@@ -91,7 +91,9 @@ def verify_signature(engine, signature, remote, payload, concurrency):
     if concurrency > 1:
       busy_process.communicate('quit\n')
 
-  return bench_nps
+  if concurrency > 1 and bench_nps < 600000:
+    return verify_signature(engine, signature, remote, payload, concurrency-1)
+  return concurrency, bench_nps
 
 def setup(item, testing_dir, url = FISHCOOKING_URL, branch = 'setup'):
   """Download item from FishCooking to testing_dir"""
@@ -324,7 +326,8 @@ def run_games(worker_info, password, remote, run, task_id):
   threads = int(run['args']['threads'])
   spsa_tuning = 'spsa' in run['args']
   repo_url = run['args'].get('tests_repo', FISHCOOKING_URL)
-  games_concurrency = int(worker_info['concurrency']) / threads
+  concurrency = int(worker_info['concurrency'])
+  games_concurrency = concurrency / threads
 
   # Format options according to cutechess syntax
   def parse_options(s):
@@ -389,11 +392,12 @@ def run_games(worker_info, password, remote, run, task_id):
     os.remove('results.pgn')
 
   # Verify signatures are correct
-  base_nps = verify_signature(new_engine, run['args']['new_signature'], remote, result, games_concurrency * threads)
+  concurrency, base_nps = verify_signature(new_engine, run['args']['new_signature'], remote, result, games_concurrency * threads)
+  games_concurrency = concurrency / threads
   verify_signature(base_engine, run['args']['base_signature'], remote, result, games_concurrency * threads)
 
   # Benchmark to adjust cpu scaling
-  scaled_tc, tc_limit = adjust_tc(run['args']['tc'], base_nps, int(worker_info['concurrency']))
+  scaled_tc, tc_limit = adjust_tc(run['args']['tc'], base_nps, concurrency)
   result['nps'] = base_nps
 
   # Handle book or pgn file
